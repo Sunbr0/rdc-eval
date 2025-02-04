@@ -61,16 +61,54 @@ uint16_t get_adc_position(Resolver *self) {
     return (ADC_BUFFER_SIZE - remaining) % ADC_BUFFER_SIZE;
 }
 
+#include "resolver.h"
+#include <string.h>  // For memcpy
+
+/**
+ * @brief  Copies the safe portion of the double buffer into the provided buffer.
+ *         Ensures that the copied region is not being written to by DMA.
+ * @param  resolver Pointer to the resolver instance
+ * @param  dest_buffer Pointer to an external buffer where safe data will be copied
+ * @param  size Pointer to a uint16_t to store the number of copied samples
+ * @retval None
+ */
+void resolver_get_buffer(Resolver *resolver, uint16_t *dest_buffer, uint16_t size) {
+    if (!resolver || !dest_buffer || !size) return;
+
+    uint16_t *active = resolver->resolver_quadrature.active_buffer;
+    uint16_t *idle = resolver->resolver_quadrature.idle_buffer;
+
+    switch (resolver->resolver_quadrature.state) {
+        case ADC_ACTIVE_1:
+            // ADC writing first half → Safe to copy entire idle buffer
+            memcpy(dest_buffer, idle, sizeof(uint16_t) * ADC_BUFFER_SIZE);
+            size = ADC_BUFFER_SIZE;
+            break;
+
+        case ADC_ACTIVE_2:
+            // ADC writing second half → Safe to copy second half of idle and first half of active
+            memcpy(dest_buffer, &idle[ADC_BUFFER_SIZE / 2], sizeof(uint16_t) * (ADC_BUFFER_SIZE / 2));
+            memcpy(&dest_buffer[ADC_BUFFER_SIZE / 2], active, sizeof(uint16_t) * (ADC_BUFFER_SIZE / 2));
+            size = ADC_BUFFER_SIZE;
+            break;
+
+        default:
+            size = 0;  // No valid data
+            break;
+    }
+}
+
+
 void resolver_handle_adc_callback(Resolver *self, uint8_t is_half_transfer) {
     if (!self) return;
 
     if (is_half_transfer) {
         // Half transfer: First half of the active buffer is being written
-        self->resolver_quadrature.state = (self->resolver_quadrature.state == ADC_ACTIVE_1) ? ADC_ACTIVE_2 : ADC_ACTIVE_1;
+        self->resolver_quadrature.state = ADC_ACTIVE_1;
 
     } else {
         // Full transfer: Second half of the active buffer is being written
-        self->resolver_quadrature.state = (self->resolver_quadrature.state == ADC_ACTIVE_3) ? ADC_ACTIVE_4 : ADC_ACTIVE_3;
+        self->resolver_quadrature.state = ADC_ACTIVE_2;
 
         // Swap buffers after full transfer
         HAL_ADC_Stop_DMA(self->hadc);

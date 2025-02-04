@@ -12,10 +12,8 @@
 
 typedef enum {
     ADC_IDLE,       	// Stopped
-    ADC_ACTIVE_1,    	// ADC writing 1st quadrant
-	ADC_ACTIVE_2,     // ADC writing 2nd quadrant
-	ADC_ACTIVE_3,  	// ADC writing 3rd quadrant
-	ADC_ACTIVE_4  	// ADC writing 4th quadrant
+    ADC_ACTIVE_1,    	// ADC writing 1st half
+	ADC_ACTIVE_2,     // ADC writing 2nd half
 } ADCState;
 
 typedef struct {
@@ -52,6 +50,7 @@ void resolver_init(Resolver *resolver,
 void resolver_start(Resolver *resolver);
 
 void resolver_handle_adc_callback(Resolver *resolver, uint8_t is_half_transfer);
+void resolver_get_buffer(Resolver *resolver, uint16_t *dest_buffer, uint16_t size);
 
 
 #endif /* INC_RESOLVER_H_ */

@@ -91,6 +91,8 @@ static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
 		0x535, 0x554, 0x573, 0x593, 0x5b2, 0x5d2, 0x5f2, 0x612,
 		0x633, 0x653, 0x674, 0x695, 0x6b6, 0x6d7, 0x6f8, 0x719
 };
+
+uint16_t sample_buffer[ADC_BUFFER_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -166,13 +168,19 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
-  serial_plotter_init(&serial_plotter, &hlpuart1, &htim3);
-
-//  serial_plotter_add_channel(&serial_plotter, excitation.lookup_table);
 //  serial_plotter_add_channel(&serial_plotter, demodulation_get_sin_buffer(&demodulation));
 //  serial_plotter_add_channel(&serial_plotter, demodulation_get_cos_buffer(&demodulation));
+  resolver_init(&resolver,
+			   &hdac1,
+			   &hadc2,
+			   &htim2,
+			   &htim4,
+			   sine_lookup_table);
+  resolver_start(&resolver);
+  resolver_get_buffer(&resolver, sample_buffer, sizeof(sample_buffer));
 
-
+  serial_plotter_init(&serial_plotter, &hlpuart1, &htim3);
+  serial_plotter_add_channel(&serial_plotter, sample_buffer);
   // Start ADC sample timer (10kHz * 20 = 200kHz)
   HAL_TIM_Base_Start(&htim4);
   /* USER CODE END 2 */
