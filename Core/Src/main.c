@@ -56,6 +56,8 @@ TIM_HandleTypeDef htim4;
 SerialPlotter serial_plotter;
 Resolver resolver;
 
+volatile uint8_t tim3_flag = 0;
+
 
 static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
 		0x73a, 0x75b, 0x77c, 0x79d, 0x7be, 0x7df, 0x800, 0x821,
@@ -92,7 +94,9 @@ static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
 		0x633, 0x653, 0x674, 0x695, 0x6b6, 0x6d7, 0x6f8, 0x719
 };
 
-uint16_t sample_buffer[ADC_BUFFER_SIZE];
+uint16_t sample_buffer[ADC_BUFFER_SIZE/2];
+uint16_t sin_buffer[ADC_BUFFER_SIZE/4];   // Holds sine data
+uint16_t cos_buffer[ADC_BUFFER_SIZE/4];   // Holds cosine data
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -118,15 +122,9 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
     serial_plotter_tx_complete_callback(huart);
 }
 
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
-    if (hadc->Instance == ADC2) {
-        resolver_handle_adc_callback(&resolver, 1);  // 1 = Half transfer
-    }
-}
-
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
-    if (hadc->Instance == ADC2) {
-        resolver_handle_adc_callback(&resolver, 0);  // 0 = Full transfer
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim == &htim3) {
+        tim3_flag = 1;  // Set flag to trigger serial_plotter_process()
     }
 }
 /* USER CODE END 0 */
@@ -168,8 +166,6 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
-//  serial_plotter_add_channel(&serial_plotter, demodulation_get_sin_buffer(&demodulation));
-//  serial_plotter_add_channel(&serial_plotter, demodulation_get_cos_buffer(&demodulation));
   resolver_init(&resolver,
 			   &hdac1,
 			   &hadc2,
@@ -177,21 +173,31 @@ int main(void)
 			   &htim4,
 			   sine_lookup_table);
   resolver_start(&resolver);
-  resolver_get_buffer(&resolver, sample_buffer, sizeof(sample_buffer));
+  get_adc_buffer_safe(&resolver, sample_buffer, ADC_BUFFER_SIZE/2);
+
+  // Separate sin and cos samples
+  for (uint16_t i = 0; i < ADC_BUFFER_SIZE/2; i++) {
+      sin_buffer[i] = sample_buffer[i * 2];     // Even index → Sin
+      cos_buffer[i] = sample_buffer[i * 2 + 1]; // Odd index → Cos
+  }
 
   serial_plotter_init(&serial_plotter, &hlpuart1, &htim3);
+  serial_plotter_add_channel(&serial_plotter, sin_buffer);  // Channel 1 → Sin
+  serial_plotter_add_channel(&serial_plotter, cos_buffer);  // Channel 2 → Cos
   serial_plotter_add_channel(&serial_plotter, sample_buffer);
   // Start ADC sample timer (10kHz * 20 = 200kHz)
   HAL_TIM_Base_Start(&htim4);
+  HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-	  // Handle non-blocking UART transmission
-	  serial_plotter_process(&serial_plotter);
+	    if (tim3_flag) {
+	        serial_plotter_process(&serial_plotter);
+	        tim3_flag = 0;
+	    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
