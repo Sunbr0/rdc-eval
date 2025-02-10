@@ -26,7 +26,7 @@ void resolver_init(Resolver *self,
     				  LOOKUP_TABLE_SIZE, DAC_ALIGN_12B_R);
 
     // Initialize ADC input
-    HAL_ADC_Start_DMA(self->hadc, (uint32_t *)self->adc_buffer, ADC_BUFFER_SIZE);
+    HAL_ADC_Start_DMA(self->hadc, self->adc_buffer, ADC_BUFFER_SIZE);
 }
 
 
@@ -40,7 +40,7 @@ void resolver_start(Resolver *self) {
 }
 
 // Get the next position in the lookup table
-uint16_t excitation_get_position(Resolver *self) {
+uint16_t get_excitation_position(Resolver *self) {
 	uint16_t remaining = __HAL_DMA_GET_COUNTER(self->hdac->DMA_Handle1);
 	return (LOOKUP_TABLE_SIZE - remaining) % LOOKUP_TABLE_SIZE;
 }
@@ -59,19 +59,6 @@ uint16_t excitation_get_value(Resolver *self, uint16_t position) {
 }
 
 void get_adc_buffer_safe(Resolver *self, uint16_t *buffer, uint16_t size) {
+	memcpy(buffer, self->adc_buffer, sizeof(uint16_t) * size);
 
-    uint16_t dma_pos = get_adc_position(self);  // Current DMA position
-    uint16_t *adc_buf = self->adc_buffer;
-
-    // Ensure we only copy data that has been fully written
-    uint16_t safe_start = (dma_pos >= size) ? (dma_pos - size) : (ADC_BUFFER_SIZE - (size - dma_pos));
-
-    // Handle wrap-around when copying
-    if (safe_start + size <= ADC_BUFFER_SIZE) {
-        memcpy(buffer, &adc_buf[safe_start], sizeof(uint16_t) * size);
-    } else {
-        uint16_t first_chunk = ADC_BUFFER_SIZE - safe_start;
-        memcpy(buffer, &adc_buf[safe_start], sizeof(uint16_t) * first_chunk);
-        memcpy(&buffer[first_chunk], adc_buf, sizeof(uint16_t) * (size - first_chunk));
-    }
 }

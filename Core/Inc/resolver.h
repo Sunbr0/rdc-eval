@@ -10,8 +10,6 @@
 
 #include "main.h"
 
-typedef struct {
-} ResolverQuadrature;
 
 typedef struct {
 	uint16_t sine_buffer[ADC_BUFFER_SIZE/2];
@@ -25,7 +23,7 @@ typedef struct {
 	TIM_HandleTypeDef *htim_excitation;
 	TIM_HandleTypeDef *htim_adc;
 	const uint16_t *lookup_table;
-    uint16_t adc_buffer[ADC_BUFFER_SIZE];
+    uint32_t adc_buffer[ADC_BUFFER_SIZE];
 	QuadratureSample quadrature_sample;
 	uint16_t freq_ratio;
 }Resolver;
@@ -38,6 +36,7 @@ void resolver_init(Resolver *resolver,
 				   const uint16_t *lookup_table);
 void resolver_start(Resolver *resolver);
 void get_adc_buffer_safe(Resolver *self, uint16_t *buffer, uint16_t size);
+uint16_t get_excitation_position(Resolver *self);
 
 
 

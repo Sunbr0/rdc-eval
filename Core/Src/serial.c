@@ -9,27 +9,47 @@
 #include "serial.h"
 
 // Initialize the Serial structure
-void Serial_Init(Serial_t *serial, UART_HandleTypeDef *huart) {
-    serial->huart = huart;
-    HAL_UART_Init(serial->huart);
-}
-
-// Send a string (Blocking Mode)
-void Serial_SendString(Serial_t *serial, const char *str) {
-    HAL_UART_Transmit(serial->huart, (uint8_t *)str, strlen(str), HAL_MAX_DELAY);
-}
-
-// Send raw data (Blocking Mode)
-void Serial_SendData(Serial_t *serial, uint8_t *data, uint16_t len) {
-    HAL_UART_Transmit(serial->huart, data, len, HAL_MAX_DELAY);
+void Serial_Init(Serial_t *self, UART_HandleTypeDef *huart) {
+    self->huart = huart;
+    self->tx_head = 0;
+    self->tx_tail = 0;
+    self->tx_busy = false;
+    HAL_UART_Init(self->huart);
 }
 
 // Send a string using Interrupt Mode (Non-blocking)
-void Serial_SendString_IT(Serial_t *serial, const char *str) {
-    HAL_UART_Transmit_IT(serial->huart, (uint8_t *)str, strlen(str));
+void Serial_SendString(Serial_t *self, const char *str) {
+    uint16_t len = strlen(str);
+
+    // Copy data to the TX buffer
+    for (uint16_t i = 0; i < len; i++) {
+        self->tx_buffer[self->tx_head] = str[i];
+        self->tx_head = (self->tx_head + 1) % SERIAL_TX_BUFFER_SIZE;
+
+        // Prevent buffer overflow
+        if (self->tx_head == self->tx_tail) {
+            self->tx_head = (self->tx_head - 1) % SERIAL_TX_BUFFER_SIZE;  // Undo last write
+            break;
+        }
+    }
+
+    // Start transmission if not already busy
+    if (!self->tx_busy) {
+        self->tx_busy = true;
+        uint8_t first_byte = self->tx_buffer[self->tx_tail];
+        self->tx_tail = (self->tx_tail + 1) % SERIAL_TX_BUFFER_SIZE;
+        HAL_UART_Transmit_IT(self->huart, &first_byte, 1);
+    }
 }
 
-// Send a string using DMA Mode (Efficient for large logs)
-void Serial_SendString_DMA(Serial_t *serial, const char *str) {
-    HAL_UART_Transmit_DMA(serial->huart, (uint8_t *)str, strlen(str));
+// Callback for UART Tx complete
+void Serial_Transmit_Complete_Callback(Serial_t *self) {
+    // Check if more data is waiting in the buffer
+    if (self->tx_tail != self->tx_head) {
+        uint8_t next_byte = self->tx_buffer[self->tx_tail];
+        self->tx_tail = (self->tx_tail + 1) % SERIAL_TX_BUFFER_SIZE;
+        HAL_UART_Transmit_IT(self->huart, &next_byte, 1);
+    } else {
+        self->tx_busy = false;  // Transmission complete
+    }
 }

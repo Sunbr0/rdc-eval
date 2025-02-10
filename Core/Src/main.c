@@ -58,7 +58,7 @@ TIM_HandleTypeDef htim4;
 Resolver resolver;
 Serial_t serial;
 
-volatile uint8_t tim3_flag = 0;
+volatile uint16_t tim3_flag = 0;
 
 
 static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
@@ -96,10 +96,9 @@ static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
 		0x633, 0x653, 0x674, 0x695, 0x6b6, 0x6d7, 0x6f8, 0x719
 };
 
-uint16_t sample_buffer[ADC_BUFFER_SIZE/2];
-uint16_t excit_buffer[ADC_BUFFER_SIZE/4];
-uint16_t sin_buffer[ADC_BUFFER_SIZE/4];   // Holds sine data
-uint16_t cos_buffer[ADC_BUFFER_SIZE/4];   // Holds cosine data
+uint16_t test_buff[LOOKUP_TABLE_SIZE];
+
+uint16_t index_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -123,6 +122,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     if (htim->Instance == TIM3) {
         tim3_flag = 1;
     }
+}
+
+// UART TX Complete Callback
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+    // Call the serial module's transmit complete callback
+    Serial_Transmit_Complete_Callback(&serial);
 }
 
 // UART TX callback
@@ -178,6 +183,11 @@ int main(void)
   resolver_start(&resolver);
   HAL_TIM_Base_Start_IT(&htim3);
 
+  for(uint16_t i=0;i<LOOKUP_TABLE_SIZE/2;i++)
+  {
+	  test_buff[i*2] = i;
+	  test_buff[1+i*2] = i;
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -187,6 +197,19 @@ int main(void)
 	  if (tim3_flag) {
 		  tim3_flag = 0;  // Reset flag
 
+		  // If buffer is full, fetch new ADC values
+		  if (index_counter >= LOOKUP_TABLE_SIZE/2)
+		  {
+//			  get_adc_buffer_safe(&resolver, test_buff, LOOKUP_TABLE_SIZE);
+			  index_counter = 0;
+		  }
+
+		  // Convert ADC value to string and send via UART
+		  char buff[32];
+		  sprintf(buff, "%u,%u,%lu\r\n", test_buff[index_counter*2], test_buff[1+index_counter*2], resolver.adc_buffer[get_excitation_position(&resolver)]);
+		  Serial_SendString(&serial, buff);
+
+		  index_counter++;
 	  }
     /* USER CODE END WHILE */
 
@@ -618,6 +641,13 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+
+
+	  if (tim3_flag) {
+		  Serial_SendString(&serial, "Error!\r\n");
+
+		  tim3_flag = 0;  // Reset flag
+	  }
   }
   /* USER CODE END Error_Handler_Debug */
 }
