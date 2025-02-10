@@ -21,8 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "serial_plotter.h"
 #include "resolver.h"
+#include "serial_logger.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,13 +48,13 @@ DAC_HandleTypeDef hdac1;
 DMA_HandleTypeDef hdma_dac1_ch1;
 
 UART_HandleTypeDef hlpuart1;
+DMA_HandleTypeDef hdma_lpuart1_tx;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-SerialPlotter serial_plotter;
 Resolver resolver;
 
 volatile uint8_t tim3_flag = 0;
@@ -95,6 +96,7 @@ static const uint16_t sine_lookup_table[LOOKUP_TABLE_SIZE] = {
 };
 
 uint16_t sample_buffer[ADC_BUFFER_SIZE/2];
+uint16_t excit_buffer[ADC_BUFFER_SIZE/4];
 uint16_t sin_buffer[ADC_BUFFER_SIZE/4];   // Holds sine data
 uint16_t cos_buffer[ADC_BUFFER_SIZE/4];   // Holds cosine data
 /* USER CODE END PV */
@@ -115,18 +117,15 @@ static void MX_ADC2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* ADC DMA Transfer Complete Callback */
-
-// UART TX callback
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
-    serial_plotter_tx_complete_callback(huart);
-}
-
+// TIM3 Interrupt Callback
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim == &htim3) {
-        tim3_flag = 1;  // Set flag to trigger serial_plotter_process()
+    if (htim->Instance == TIM3) {
+        tim3_flag = 1;
     }
 }
+
+// UART TX callback
+
 /* USER CODE END 0 */
 
 /**
@@ -173,20 +172,16 @@ int main(void)
 			   &htim4,
 			   sine_lookup_table);
   resolver_start(&resolver);
-  get_adc_buffer_safe(&resolver, sample_buffer, ADC_BUFFER_SIZE/2);
 
   // Separate sin and cos samples
   for (uint16_t i = 0; i < ADC_BUFFER_SIZE/2; i++) {
+	  excit_buffer[i] = sine_lookup_table[i];
       sin_buffer[i] = sample_buffer[i * 2];     // Even index → Sin
       cos_buffer[i] = sample_buffer[i * 2 + 1]; // Odd index → Cos
   }
 
-  serial_plotter_init(&serial_plotter, &hlpuart1, &htim3);
-  serial_plotter_add_channel(&serial_plotter, sin_buffer);  // Channel 1 → Sin
-  serial_plotter_add_channel(&serial_plotter, cos_buffer);  // Channel 2 → Cos
-  serial_plotter_add_channel(&serial_plotter, sample_buffer);
-  // Start ADC sample timer (10kHz * 20 = 200kHz)
-  HAL_TIM_Base_Start(&htim4);
+  serial_logger_init(&hlpuart1);
+
   HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
@@ -194,10 +189,22 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	    if (tim3_flag) {
-	        serial_plotter_process(&serial_plotter);
-	        tim3_flag = 0;
-	    }
+	  if (tim3_flag) {
+		  tim3_flag = 0;  // Reset flag
+
+		  // Extract ADC samples into separate buffers
+		  get_adc_buffer_safe(&resolver, sample_buffer, ADC_BUFFER_SIZE/2);
+		  for (uint16_t i = 0; i < ADC_BUFFER_SIZE/4; i++) {
+			  sin_buffer[i] = sample_buffer[i * 2];     // Even index → Sin
+			  cos_buffer[i] = sample_buffer[i * 2 + 1]; // Odd index → Cos
+			  excit_buffer[i] = resolver.lookup_table[i % LOOKUP_TABLE_SIZE];  // Excitation from LUT
+		  }
+
+		  // Send last sample of each signal to Serial Oscilloscope
+		  serial_logger_send(sin_buffer[ADC_BUFFER_SIZE/4 - 1],
+							 cos_buffer[ADC_BUFFER_SIZE/4 - 1],
+							 excit_buffer[ADC_BUFFER_SIZE/4 - 1]);
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -566,6 +573,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 

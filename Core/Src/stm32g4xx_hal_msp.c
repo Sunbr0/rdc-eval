@@ -27,6 +27,8 @@ extern DMA_HandleTypeDef hdma_adc2;
 
 extern DMA_HandleTypeDef hdma_dac1_ch1;
 
+extern DMA_HandleTypeDef hdma_lpuart1_tx;
+
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
 
@@ -301,6 +303,24 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     GPIO_InitStruct.Alternate = GPIO_AF12_LPUART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+    /* LPUART1 DMA Init */
+    /* LPUART1_TX Init */
+    hdma_lpuart1_tx.Instance = DMA1_Channel3;
+    hdma_lpuart1_tx.Init.Request = DMA_REQUEST_LPUART1_TX;
+    hdma_lpuart1_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    hdma_lpuart1_tx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_lpuart1_tx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_lpuart1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_lpuart1_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_lpuart1_tx.Init.Mode = DMA_CIRCULAR;
+    hdma_lpuart1_tx.Init.Priority = DMA_PRIORITY_LOW;
+    if (HAL_DMA_Init(&hdma_lpuart1_tx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    __HAL_LINKDMA(huart,hdmatx,hdma_lpuart1_tx);
+
     /* LPUART1 interrupt Init */
     HAL_NVIC_SetPriority(LPUART1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(LPUART1_IRQn);
@@ -333,6 +353,9 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     PA3     ------> LPUART1_RX
     */
     HAL_GPIO_DeInit(GPIOA, LPUART1_TX_Pin|LPUART1_RX_Pin);
+
+    /* LPUART1 DMA DeInit */
+    HAL_DMA_DeInit(huart->hdmatx);
 
     /* LPUART1 interrupt DeInit */
     HAL_NVIC_DisableIRQ(LPUART1_IRQn);
