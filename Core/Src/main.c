@@ -22,7 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "resolver.h"
-#include "serial_logger.h"
+#include "serial.h"
 
 /* USER CODE END Includes */
 
@@ -56,6 +56,7 @@ TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 Resolver resolver;
+Serial_t serial;
 
 volatile uint8_t tim3_flag = 0;
 
@@ -165,6 +166,9 @@ int main(void)
   MX_TIM4_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
+  // Initialize serial with USART2
+  Serial_Init(&serial, &hlpuart1);
+
   resolver_init(&resolver,
 			   &hdac1,
 			   &hadc2,
@@ -172,39 +176,15 @@ int main(void)
 			   &htim4,
 			   sine_lookup_table);
   resolver_start(&resolver);
-
-  // Separate sin and cos samples
-  for (uint16_t i = 0; i < ADC_BUFFER_SIZE/2; i++) {
-	  excit_buffer[i] = sine_lookup_table[i];
-      sin_buffer[i] = sample_buffer[i * 2];     // Even index → Sin
-      cos_buffer[i] = sample_buffer[i * 2 + 1]; // Odd index → Cos
-  }
-
-  serial_logger_init(&hlpuart1);
-
   HAL_TIM_Base_Start_IT(&htim3);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (tim3_flag) {
-		  tim3_flag = 0;  // Reset flag
 
-		  // Extract ADC samples into separate buffers
-		  get_adc_buffer_safe(&resolver, sample_buffer, ADC_BUFFER_SIZE/2);
-		  for (uint16_t i = 0; i < ADC_BUFFER_SIZE/4; i++) {
-			  sin_buffer[i] = sample_buffer[i * 2];     // Even index → Sin
-			  cos_buffer[i] = sample_buffer[i * 2 + 1]; // Odd index → Cos
-			  excit_buffer[i] = resolver.lookup_table[i % LOOKUP_TABLE_SIZE];  // Excitation from LUT
-		  }
-
-		  // Send last sample of each signal to Serial Oscilloscope
-		  serial_logger_send(sin_buffer[ADC_BUFFER_SIZE/4 - 1],
-							 cos_buffer[ADC_BUFFER_SIZE/4 - 1],
-							 excit_buffer[ADC_BUFFER_SIZE/4 - 1]);
-	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
