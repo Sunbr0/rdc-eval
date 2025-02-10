@@ -184,7 +184,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (tim3_flag) {
+		  tim3_flag = 0;  // Reset flag
 
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
